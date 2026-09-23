@@ -14,7 +14,7 @@
         .screen.active { display: block; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; }
-        input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; text-transform: uppercase; }
         button { background: var(--p); color: #fff; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
         button:hover { background: var(--ph); }
         .btn-danger { background: #ef4444; } .btn-danger:hover { background: #dc2626; }
@@ -35,10 +35,10 @@
 
     <!-- AUTENTICAÇÃO -->
     <div id="screen-auth" class="screen active">
-        <div class="form-group"><label>Seu Nome:</label><input type="text" id="player-name" placeholder="Digite seu nome"></div>
+        <div class="form-group"><label>Seu Nome:</label><input type="text" id="player-name" placeholder="Digite seu nome" style="text-transform: none;"></div>
         <button onclick="createRoom()">Criar Sala (Host)</button>
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e5e7eb;">
-        <div class="form-group"><label>Código da Sala:</label><input type="text" id="room-id-input" placeholder="Cole o código"></div>
+        <div class="form-group"><label>Código da Sala (5 caracteres):</label><input type="text" id="room-id-input" placeholder="Ex: A7X9K" maxlength="5"></div>
         <button onclick="joinRoom()" class="btn-success">Entrar na Sala</button>
     </div>
 
@@ -51,7 +51,7 @@
             <div id="players-list"></div>
         </div>
         <div id="host-controls">
-            <div class="form-group"><label>Categorias (separadas por vírgula):</label><input type="text" id="categories" value="Nome, CEP, Cor, Objeto, Animal"></div>
+            <div class="form-group"><label>Categorias (separadas por vírgula):</label><input type="text" id="categories" value="Nome, CEP, Cor, Objeto, Animal" style="text-transform: none;"></div>
             <div class="form-group"><label>Rodadas:</label><input type="number" id="rounds" value="3" min="1" max="10"></div>
             <button onclick="hostStartGame()" class="btn-success">Iniciar Jogo</button>
         </div>
@@ -104,29 +104,51 @@
 
 <script>
     let peer = null, isHost = false, myName = "", myId = "", hostConn = null;
-    let connections = {}; // { peerId: connection }
-    let pendingRequests = {}; // { peerId: { conn, name } }
+    let connections = {}; 
+    let pendingRequests = {}; 
 
     let gameState = {
         categories: [], totalRounds: 3, currentRound: 1, currentLetter: '',
-        players: [], // [{ id, name, score }]
-        roundAnswers: {}, // { playerId: { cat: ans } }
-        roundScores: {}  // { playerId: { cat: score } }
+        players: [], 
+        roundAnswers: {}, 
+        roundScores: {}  
     };
+
+    // Gerador de código aleatório de 5 caracteres (Letras maiúsculas e números)
+    function generateRoomCode() {
+        const chars = "ABC12345";
+        let code = "";
+        for (let i = 0; i < 5; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+    }
 
     // CONEXÃO
     function createRoom() {
         myName = document.getElementById('player-name').value.trim();
         if (!myName) return alert("Digite seu nome!");
+        
         isHost = true;
-        peer = new Peer();
+        myId = generateRoomCode();
+        
+        // Inicializa o PeerJS com o ID customizado de 5 dígitos
+        peer = new Peer(myId);
 
         peer.on('open', id => {
-            myId = id;
             document.getElementById('display-room-id').textContent = id;
             gameState.players.push({ id, name: myName, score: 0 });
             renderPlayers();
             switchScreen('screen-setup');
+        });
+
+        peer.on('error', err => {
+            if (err.type === 'unavailable-id') {
+                // Se por acaso o código já existir, tenta gerar outro recursivamente
+                createRoom();
+            } else {
+                alert("Erro no PeerJS: " + err.type);
+            }
         });
 
         peer.on('connection', conn => {
@@ -137,17 +159,31 @@
 
     function joinRoom() {
         myName = document.getElementById('player-name').value.trim();
-        const roomId = document.getElementById('room-id-input').value.trim();
+        const roomId = document.getElementById('room-id-input').value.trim().toUpperCase();
         if (!myName || !roomId) return alert("Preencha nome e código!");
+        if (roomId.length !== 5) return alert("O código da sala deve ter exatamente 5 caracteres!");
+        
         isHost = false;
         peer = new Peer();
 
         peer.on('open', id => {
             myId = id;
             hostConn = peer.connect(roomId);
+            
             hostConn.on('open', () => hostConn.send({ type: 'REQ_JOIN', name: myName }));
             hostConn.on('data', handleClientMsg);
             hostConn.on('close', () => { alert("Desconectado do host!"); location.reload(); });
+            
+            // Tratamento caso a sala não exista
+            setTimeout(() => {
+                if (!hostConn.open && !gameState.players.length) {
+                    alert("Não foi possível conectar à sala. Verifique o código.");
+                }
+            }, 5000);
+        });
+        
+        peer.on('error', err => {
+            alert("Erro de conexão: " + err.type);
         });
     }
 
@@ -181,6 +217,7 @@
 
     function rejectPlayer(peerId) {
         if (pendingRequests[peerId]) {
+            pendingRequests[pendingRequests[peerId].conn.peer]?.conn.send({ type: 'REJECTED' }); // segurança
             pendingRequests[peerId].conn.send({ type: 'REJECTED' });
             delete pendingRequests[peerId];
             renderRequests();
@@ -245,7 +282,6 @@
     }
 
     function processResults() {
-        // Cálculo inicial dos pontos
         gameState.players.forEach(p => {
             gameState.roundScores[p.id] = {};
             gameState.categories.forEach(cat => {
@@ -262,7 +298,6 @@
     }
 
     function hostApplyScores() {
-        // Host altera manualmente os pontos
         gameState.players.forEach(p => {
             gameState.categories.forEach(cat => {
                 const val = parseInt(document.getElementById(`sc-${p.id}-${cat}`).value) || 0;
@@ -279,7 +314,6 @@
     }
 
     function hostNextRound() {
-        // Soma os pontos da rodada nos totais
         gameState.players.forEach(p => {
             let roundTot = Object.values(gameState.roundScores[p.id] || {}).reduce((a, b) => a + b, 0);
             p.score += roundTot;
@@ -351,7 +385,7 @@
         document.getElementById('play-letter').textContent = gameState.currentLetter;
         let html = `<table><thead><tr><th>Categoria</th><th>Resposta</th></tr></thead><tbody>`;
         gameState.categories.forEach((cat, i) => {
-            html += `<tr><td><b>${cat}</b></td><td><input type="text" id="cat-${i}"></td></tr>`;
+            html += `<tr><td><b>${cat}</b></td><td><input type="text" id="cat-${i}" style="text-transform: none;"></td></tr>`;
         });
         document.getElementById('table-container').innerHTML = html + `</tbody></table>`;
     }

@@ -418,7 +418,7 @@
         </main>
 
         <footer class="text-center text-xs text-slate-500 mt-6">
-            Arnopotch and Sype Studios &copy;   Realtime Sync via Firebase Firestore
+            🛑 STOP Ultimate Multiplayer &bull; Realtime Sync via Firebase Firestore
         </footer>
     </div>
 
@@ -471,6 +471,7 @@
         let isChatOpen = false;
         let unreadChatCount = 0;
         let isSpinningLetter = false;
+        let currentRenderedRound = null;
 
         // Efeitos Sonoros com Web Audio API
         const AudioEngine = {
@@ -656,7 +657,7 @@
                 classic: "Nome, CEP, Cor, Objeto, Animal, Minha Sogra É",
                 geek: "Filme/Série, Personagem, Animação/Anime, Game, Super-Herói, Música",
                 memes: "Desculpa Esfarrapada, Coisa Barata, Motivo pra Chorar, Item de Sobrevivência, Fruta de Rico",
-                hard: "Nome, CEP, Cor, Objeto, Animal, Minha Sogra É, comida, motivo pra faltar na festa, profissao, coisa de rico, palavra em ingles, personagem, jogo"
+                hard: "País ou Capital, Elemento Químico, Marca Extinta, Profissão, Instrumento Musical"
             };
             if (presets[presetKey]) {
                 categoriesInput.value = presets[presetKey];
@@ -967,12 +968,30 @@
                     window.switchScreen('screen-play');
                     document.getElementById('play-round-num').textContent = data.currentRound;
                     document.getElementById('play-letter').textContent = data.currentLetter;
-                    renderCategoriesForm(data.categories, data.currentLetter);
+                    renderCategoriesForm(data.categories, data.currentLetter, data.currentRound);
                     handleRoundTimer(data.timerEndsAt);
                     break;
 
                 case 'SCORE':
                     clearInterval(timerInterval);
+                    const currentRound = data.currentRound;
+
+                    // Garante o envio das respostas locais do jogador caso ainda não tenham sido salvas
+                    if (!data.roundAnswers?.[currentRound]?.[myUid]) {
+                        const myAns = saveLocalAnswers();
+                        if (Object.keys(myAns).length > 0) {
+                            const roomRef = getRoomDocRef(myRoomId);
+                            updateDoc(roomRef, {
+                                [`roundAnswers.${currentRound}.${myUid}`]: myAns
+                            }).catch(console.error);
+                        }
+                    }
+
+                    // Se for Host, recalcula a pontuação automática conforme as respostas chegam
+                    if (isHost && data.roundAnswers?.[currentRound]) {
+                        calculateAutomaticScores(data.roundAnswers[currentRound], data.categories, data.currentLetter, currentRound);
+                    }
+
                     window.switchScreen('screen-score');
                     document.getElementById('score-round-num').textContent = data.currentRound;
                     document.getElementById('stop-by-text').textContent = `STOP! acionado por ${data.stopCalledBy || 'alguém'}`;
@@ -1157,26 +1176,26 @@
         // Começar Rodada Oficial (Host)
         async function hostStartRound() {
             const timeLimitSecs = currentRoomData.timeLimit || 0;
-            const timerEndsAt = timeLimitSecs > 0 ? Date.now() + (timeLimitSecs * 1000) : 0;
-
-            try {
-                const roomRef = getRoomDocRef(myRoomId);
-                await updateDoc(roomRef, {
-                    status: 'PLAY',
-                    stopCalledBy: '',
-                    timerEndsAt: timerEndsAt,
-                    messages: arrayUnion({ sender: 'Sistema', text: `Rodada ${currentRoomData.currentRound} valendo com a letra [ ${currentRoomData.currentLetter} ]!`, timestamp: Date.now() })
+        // Extrai as respostas atuais digitadas nos inputs
+        function saveLocalAnswers() {
+            const myAnswers = {};
+            if (currentRoomData?.categories) {
+                currentRoomData.categories.forEach((cat, idx) => {
+                    const inputEl = document.getElementById(`cat-input-${idx}`);
+                    if (inputEl) {
+                        myAnswers[cat] = inputEl.value.trim();
+                    }
                 });
-            } catch (err) {
-                console.error(err);
             }
+            return myAnswers;
         }
 
         // Form com Validação em Tempo Real
-        function renderCategoriesForm(categories, letter) {
+        function renderCategoriesForm(categories, letter, round) {
             const formEl = document.getElementById('categories-form');
-            if (formEl.children.length === categories.length) return;
+            if (formEl.children.length === categories.length && currentRenderedRound === round) return;
 
+            currentRenderedRound = round;
             formEl.innerHTML = categories.map((cat, idx) => `
                 <div class="bg-slate-800/40 border border-slate-700/40 p-3.5 rounded-2xl relative">
                     <label class="block text-xs font-bold text-slate-300 uppercase mb-1.5">${cat}</label>
@@ -1220,12 +1239,7 @@
             if (!currentRoomData || currentRoomData.status !== 'PLAY') return;
 
             const myUid = getPlayerUid();
-            const myAnswers = {};
-            currentRoomData.categories.forEach((cat, idx) => {
-                const inputEl = document.getElementById(`cat-input-${idx}`);
-                myAnswers[cat] = inputEl ? inputEl.value.trim() : '';
-            });
-
+            const myAnswers = saveLocalAnswers();
             const currentRound = currentRoomData.currentRound;
 
             try {
@@ -1244,38 +1258,26 @@
                     messages: arrayUnion({ sender: 'Sistema', text: `🚨 STOP! acionado por ${myName}!`, timestamp: Date.now() })
                 });
 
-                calculateAutomaticScores(currentRoomData.roundAnswers?.[currentRound] || {}, currentRoomData.categories, currentRoomData.currentLetter, currentRound);
-
             } catch (err) {
                 console.error(err);
             }
         };
 
         async function calculateAutomaticScores(answersObj, categories, letter, roundNum) {
-            const myUid = getPlayerUid();
+            if (!isHost || !answersObj) return;
             const players = Object.keys(currentRoomData.players || {});
-
-            const currentAnswers = { ...answersObj };
-            if (!currentAnswers[myUid]) {
-                const myAns = {};
-                categories.forEach((cat, idx) => {
-                    const inputEl = document.getElementById(`cat-input-${idx}`);
-                    myAns[cat] = inputEl ? inputEl.value.trim() : '';
-                });
-                currentAnswers[myUid] = myAns;
-            }
 
             const scores = {};
             players.forEach(pId => {
                 scores[pId] = {};
                 categories.forEach(cat => {
-                    const ans = (currentAnswers[pId]?.[cat] || '').trim().toLowerCase();
-                    const reqLetter = letter.toLowerCase();
+                    const ans = (answersObj[pId]?.[cat] || '').trim().toLowerCase();
+                    const reqLetter = (letter || '').toLowerCase();
 
-                    if (ans && ans.startsWith(reqLetter)) {
+                    if (ans && reqLetter && ans.startsWith(reqLetter)) {
                         const isDuplicate = players.some(otherId => {
                             if (otherId === pId) return false;
-                            const otherAns = (currentAnswers[otherId]?.[cat] || '').trim().toLowerCase();
+                            const otherAns = (answersObj[otherId]?.[cat] || '').trim().toLowerCase();
                             return otherAns === ans;
                         });
                         scores[pId][cat] = isDuplicate ? 5 : 10;
@@ -1285,11 +1287,17 @@
                 });
             });
 
-            const roomRef = getRoomDocRef(myRoomId);
-            await updateDoc(roomRef, {
-                [`roundAnswers.${roundNum}`]: currentAnswers,
-                [`roundScores.${roundNum}`]: scores
-            });
+            const currentScores = currentRoomData.roundScores?.[roundNum] || {};
+            if (JSON.stringify(currentScores) !== JSON.stringify(scores)) {
+                try {
+                    const roomRef = getRoomDocRef(myRoomId);
+                    await updateDoc(roomRef, {
+                        [`roundScores.${roundNum}`]: scores
+                    });
+                } catch (err) {
+                    console.error(err);
+                }
+            }
         }
 
         // Tabela de Correção
@@ -1441,7 +1449,7 @@
             badgesContainer.innerHTML = `
                 <div class="bg-slate-800/60 border border-slate-700/60 p-3 rounded-xl flex flex-col items-center text-center">
                     <span class="text-2xl mb-1">🚀</span>
-                    <span class="text-xs font-bold text-indigo-400">Mais Rápido</span>
+                    <span class="text-xs font-bold text-indigo-400">Dedo Mais Rápido</span>
                     <span class="text-xs text-slate-200 font-semibold mt-0.5">${topStopCallPlayer?.name || 'Ninguém'}</span>
                 </div>
                 <div class="bg-slate-800/60 border border-slate-700/60 p-3 rounded-xl flex flex-col items-center text-center">

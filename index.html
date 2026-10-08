@@ -672,7 +672,11 @@
             if (!myName) return showToast("Por favor, digite seu nickname!", "error");
 
             try {
-                await ensureAuth();
+                try {
+                    await ensureAuth();
+                } catch (authErr) {
+                    console.warn("Aviso na autenticação anônima, usando UID local:", authErr);
+                }
 
                 const myUid = getPlayerUid();
                 isHost = true;
@@ -969,7 +973,7 @@
                     clearInterval(timerInterval);
                     const currentRound = data.currentRound;
 
-                    // CORREÇÃO CRÍTICA: Envia as respostas locais imediatamente se ainda não foram enviadas
+                    // Envia as respostas locais se ainda não tiverem sido enviadas
                     if (!hasSubmittedCurrentRound) {
                         hasSubmittedCurrentRound = true;
                         const myAns = saveLocalAnswers();
@@ -1239,7 +1243,7 @@
             const myUid = getPlayerUid();
             const myAnswers = saveLocalAnswers();
             const currentRound = currentRoomData.currentRound;
-            hasSubmittedCurrentRound = true; // Marca que o próprio acionador do STOP já enviou
+            hasSubmittedCurrentRound = true;
 
             try {
                 const roomRef = getRoomDocRef(myRoomId);
@@ -1299,7 +1303,12 @@
             }
         }
 
+        // Renderização da tabela de correção preservando o foco de digitação do Host
         function renderScoreTable(data) {
+            if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.classList.contains('score-input-field')) {
+                return;
+            }
+
             const roundNum = data.currentRound;
             const categories = data.categories || [];
             const playersArr = Object.values(data.players || {});
@@ -1331,7 +1340,7 @@
                                     <td class="p-3">
                                         <div class="font-medium text-slate-200 text-xs mb-1">${ansText}</div>
                                         <div class="flex items-center gap-2">
-                                            <input type="number" id="sc-${p.id}-${cat}" value="${ptsVal}" step="5" min="0" max="10" class="w-16 bg-slate-900 border border-slate-700 rounded p-1 text-center font-bold text-indigo-400 text-xs focus:outline-none focus:border-indigo-500">
+                                            <input type="number" data-player="${p.id}" data-category="${cat}" value="${ptsVal}" step="5" min="0" max="10" class="score-input-field w-16 bg-slate-900 border border-slate-700 rounded p-1 text-center font-bold text-indigo-400 text-xs focus:outline-none focus:border-indigo-500">
                                             <span class="text-[10px] text-slate-400">👍${upVotes} 👎${downVotes}</span>
                                         </div>
                                     </td>
@@ -1373,22 +1382,27 @@
             }
         };
 
+        // Salvar as notas corrigidas pelo Host no Firestore
         window.hostApplyScores = async function() {
             if (!isHost || !currentRoomData) return;
             AudioEngine.playPop();
 
             const roundNum = currentRoomData.currentRound;
-            const categories = currentRoomData.categories || [];
-            const playersArr = Object.values(currentRoomData.players || {});
-            const updatedRoundScores = {};
+            const updatedRoundScores = { ...(currentRoomData.roundScores?.[roundNum] || {}) };
 
-            playersArr.forEach(p => {
-                updatedRoundScores[p.id] = {};
-                categories.forEach(cat => {
-                    const inputEl = document.getElementById(`sc-${p.id}-${cat}`);
-                    const val = inputEl ? parseInt(inputEl.value) || 0 : 0;
-                    updatedRoundScores[p.id][cat] = val;
-                });
+            const inputs = document.querySelectorAll('.score-input-field');
+            
+            inputs.forEach(input => {
+                const playerId = input.getAttribute('data-player');
+                const category = input.getAttribute('data-category');
+                const scoreVal = parseInt(input.value, 10);
+
+                if (playerId && category) {
+                    if (!updatedRoundScores[playerId]) {
+                        updatedRoundScores[playerId] = {};
+                    }
+                    updatedRoundScores[playerId][category] = isNaN(scoreVal) ? 0 : scoreVal;
+                }
             });
 
             try {
@@ -1396,9 +1410,15 @@
                 await updateDoc(roomRef, {
                     [`roundScores.${roundNum}`]: updatedRoundScores
                 });
-                showToast("Pontuações atualizadas com sucesso!", "success");
+                
+                if (document.activeElement) {
+                    document.activeElement.blur();
+                }
+                
+                showToast("Pontuações salvas e atualizadas para todos!", "success");
             } catch (err) {
-                console.error(err);
+                console.error("Erro ao salvar notas:", err);
+                showToast("Erro ao salvar notas no banco.", "error");
             }
         };
 

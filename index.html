@@ -69,7 +69,7 @@
 </head>
 <body class="min-h-full flex flex-col justify-between p-3 md:p-8 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/50 via-slate-900 to-slate-950 relative overflow-x-hidden">
 
-    <!-- CONTAINER DE NOTIFICAÇÕES TOAST (SUBSTITUTO DE ALERTS) -->
+    <!-- CONTAINER DE NOTIFICAÇÕES TOAST -->
     <div id="toast-container" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
 
     <!-- CONTAINER DE EMOJIS FLUTUANTES DA SALA -->
@@ -305,7 +305,7 @@
                 </div>
             </section>
 
-            <!-- 4. RODADA DE RESPOSTAS (GAMEPLAY COM CRONÔMETRO & VALIDAÇÃO) -->
+            <!-- 4. RODADA DE RESPOSTAS -->
             <section id="screen-play" class="hidden space-y-6">
                 <div class="flex items-center justify-between bg-slate-800/60 border border-slate-700/50 p-4 rounded-2xl flex-wrap gap-2">
                     <div class="flex items-center gap-3">
@@ -317,13 +317,11 @@
                         </div>
                     </div>
 
-                    <!-- PROGRESSO DE PREENCHIMENTO -->
                     <div class="text-xs font-semibold text-slate-400 flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-slate-800">
                         <i class="ph-bold ph-check-square text-indigo-400 text-base"></i>
                         <span id="answered-counter">0/0 Respondidos</span>
                     </div>
 
-                    <!-- CRONÔMETRO DEDICADO DA RODADA -->
                     <div id="timer-display-box" class="flex items-center gap-2 bg-slate-900/80 border border-slate-700 px-4 py-2 rounded-xl">
                         <i class="ph-bold ph-clock text-amber-400 text-xl animate-bounce"></i>
                         <span id="timer-seconds" class="font-mono font-black text-2xl text-amber-400">60</span>
@@ -357,7 +355,6 @@
                         <thead class="bg-slate-800/80 text-xs uppercase font-bold text-slate-400 border-b border-slate-700">
                             <tr id="score-table-header">
                                 <th class="p-4">Jogador</th>
-                                <!-- Categorias dinâmicas -->
                             </tr>
                         </thead>
                         <tbody id="score-table-body" class="divide-y divide-slate-800">
@@ -392,7 +389,6 @@
                     <p class="text-slate-400 text-sm">Confira a classificação final e os troféus da partida!</p>
                 </div>
 
-                <!-- BADGES DA PARTIDA -->
                 <div id="game-badges-container" class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl mx-auto">
                     <!-- Gerados via JS -->
                 </div>
@@ -442,6 +438,100 @@
             arrayUnion
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // Motor de Áudio Simples (Web Audio API)
+        const AudioEngine = {
+            ctx: null,
+            init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+            playPop() {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            },
+            playBeep(freq = 440) {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.08);
+            },
+            playStopBuzzer() {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+            },
+            playTicking() {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.03);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.03);
+            },
+            playVictory() {
+                this.init();
+                const notes = [261.63, 329.63, 392.00, 523.25];
+                notes.forEach((freq, idx) => {
+                    setTimeout(() => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.value = freq;
+                        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + 0.3);
+                    }, idx * 100);
+                });
+            }
+        };
+
+        // Função de Toasts Informativos
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = "bg-slate-800 border-slate-700 text-white";
+            if (type === 'error') bgClass = "bg-rose-950/90 border-rose-800 text-rose-200";
+            if (type === 'success') bgClass = "bg-emerald-950/90 border-emerald-800 text-emerald-200";
+
+            toast.className = `toast p-3.5 rounded-xl border shadow-xl text-xs font-bold flex items-center justify-between gap-3 ${bgClass}`;
+            toast.innerHTML = `<span>${message}</span>`;
+
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
         // Configuração do Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyAosmY6kS1VUJweTbWUWAtIrmrHzI0dNGg",
@@ -459,7 +549,7 @@
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'stop-game-ultimate';
 
-        // Variáveis Globais de Estado Local
+        // Variáveis Globais
         let currentUser = null;
         let myName = '';
         let myRoomId = '';
@@ -472,111 +562,8 @@
         let unreadChatCount = 0;
         let isSpinningLetter = false;
         let currentRenderedRound = null;
+        let hasSubmittedCurrentRound = false;
 
-        // Efeitos Sonoros com Web Audio API
-        const AudioEngine = {
-            ctx: null,
-            init() {
-                if (!this.ctx) {
-                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-            },
-            playPop() {
-                this.init();
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.08);
-                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.08);
-            },
-            playBeep(freq = 600) {
-                this.init();
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.15);
-            },
-            playTicking() {
-                this.init();
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
-                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(this.ctx.currentTime + 0.05);
-            },
-            playStopBuzzer() {
-                this.init();
-                const now = this.ctx.currentTime;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(150, now);
-                osc.frequency.linearRampToValueAtTime(300, now + 0.15);
-                osc.frequency.linearRampToValueAtTime(100, now + 0.4);
-                gain.gain.setValueAtTime(0.5, now);
-                gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
-                osc.connect(gain);
-                gain.connect(this.ctx.destination);
-                osc.start();
-                osc.stop(now + 0.5);
-            },
-            playVictory() {
-                this.init();
-                const notes = [261.63, 329.63, 392.00, 523.25];
-                notes.forEach((freq, idx) => {
-                    const osc = this.ctx.createOscillator();
-                    const gain = this.ctx.createGain();
-                    const start = this.ctx.currentTime + (idx * 0.12);
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(freq, start);
-                    gain.gain.setValueAtTime(0.3, start);
-                    gain.gain.linearRampToValueAtTime(0.01, start + 0.3);
-                    osc.connect(gain);
-                    gain.connect(this.ctx.destination);
-                    osc.start(start);
-                    osc.stop(start + 0.3);
-                });
-            }
-        };
-
-        // Sistema de Notificação Toast
-        window.showToast = function(msg, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-
-            let bgClass = "bg-slate-800 border-indigo-500 text-white";
-            if (type === 'error') bgClass = "bg-rose-900 border-rose-500 text-white";
-            if (type === 'success') bgClass = "bg-emerald-900 border-emerald-500 text-white";
-
-            toast.className = `toast p-4 rounded-xl border shadow-2xl flex items-center gap-3 text-sm font-bold ${bgClass}`;
-            toast.innerHTML = `<i class="ph-bold ph-info text-xl"></i> <span>${msg}</span>`;
-
-            container.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transition = 'opacity 0.3s ease';
-                setTimeout(() => toast.remove(), 300);
-            }, 3500);
-        };
-
-        // ID isolado por Aba
         function getPlayerUid() {
             let localId = sessionStorage.getItem('stop_game_uid');
             if (!localId) {
@@ -586,11 +573,30 @@
             return localId;
         }
 
-        // Configuração Auth com sessão isolada
+        async function ensureAuth() {
+            if (auth.currentUser) {
+                currentUser = auth.currentUser;
+                return auth.currentUser;
+            }
+            try {
+                await setPersistence(auth, browserSessionPersistence);
+                const cred = await signInAnonymously(auth);
+                currentUser = cred.user;
+                return cred.user;
+            } catch (e) {
+                console.warn("Auth warning:", e);
+                currentUser = { uid: getPlayerUid() };
+                return currentUser;
+            }
+        }
+
         setPersistence(auth, browserSessionPersistence)
             .then(() => signInAnonymously(auth))
             .then((cred) => { currentUser = cred.user; })
-            .catch(() => { currentUser = { uid: getPlayerUid() }; });
+            .catch((e) => { 
+                console.warn("Auth initialization warning:", e);
+                currentUser = { uid: getPlayerUid() }; 
+            });
 
         onAuthStateChanged(auth, (user) => { if (user) currentUser = user; });
 
@@ -605,7 +611,6 @@
             return code;
         }
 
-        // Alternador de Telas
         window.switchScreen = function(screenId) {
             const screens = ['screen-auth', 'screen-setup', 'screen-draw', 'screen-play', 'screen-score', 'screen-final'];
             screens.forEach(id => {
@@ -616,7 +621,6 @@
                 }
             });
 
-            // Exibe a barra de reações e chat quando estiver em uma sala
             const reactionsBar = document.getElementById('reactions-bar');
             const chatWidget = document.getElementById('chat-widget');
 
@@ -629,11 +633,10 @@
             }
         };
 
-        // Banco Expandido de Categorias Aleatórias ("Surpreenda-me!")
         window.applyRandomCategories = function() {
             AudioEngine.playPop();
             const pool = [
-                "Nome de Bebê", "CEP/Cidade", "Fruta ou Verfura", "Objeto de Cozinha",
+                "Nome de Bebê", "CEP/Cidade", "Fruta ou Verdura", "Objeto de Cozinha",
                 "Animal Silvestre", "Profissão Estranha", "Filme ou Série", "Marca Famosa",
                 "Super-Herói", "Motivo para Atraso", "Item de Sobrevivência Zombie",
                 "Minha Sogra É", "Coisa Verde", "Comida de Boteco", "Banda ou Cantor",
@@ -641,7 +644,6 @@
                 "Jogo de Video Game", "Lugar para Primeiro Encontro", "Coisa Barata"
             ];
 
-            // Embaralhar e pegar 6
             const shuffled = [...pool].sort(() => 0.5 - Math.random());
             const selected = shuffled.slice(0, 6).join(", ");
 
@@ -649,7 +651,6 @@
             showToast("Categorias aleatórias geradas!", "success");
         };
 
-        // Presets Rápidos de Categorias
         window.applyCategoryPreset = function(presetKey) {
             AudioEngine.playPop();
             const categoriesInput = document.getElementById('categories');
@@ -665,49 +666,50 @@
             }
         };
 
-        // Criar Sala (Host)
         window.createRoom = async function() {
             AudioEngine.playPop();
             myName = document.getElementById('player-name').value.trim();
             if (!myName) return showToast("Por favor, digite seu nickname!", "error");
 
-            const myUid = getPlayerUid();
-            isHost = true;
-            myRoomId = generateRoomCode();
-
-            const initialRoomData = {
-                roomId: myRoomId,
-                hostId: myUid,
-                status: 'LOBBY',
-                categories: ["Nome", "CEP", "Cor", "Objeto", "Animal", "Minha Sogra É"],
-                totalRounds: 3,
-                timeLimit: 60,
-                currentRound: 1,
-                currentLetter: '',
-                stopCalledBy: '',
-                timerEndsAt: 0,
-                players: {
-                    [myUid]: { id: myUid, name: myName, score: 0, isHost: true, stopCalls: 0, ready: true }
-                },
-                roundAnswers: {},
-                roundScores: {},
-                votes: {},
-                messages: [{ sender: 'Sistema', text: `Sala criada por ${myName}!`, timestamp: Date.now() }],
-                lastReaction: null
-            };
-
             try {
+                await ensureAuth();
+
+                const myUid = getPlayerUid();
+                isHost = true;
+                myRoomId = generateRoomCode();
+
+                const initialRoomData = {
+                    roomId: myRoomId,
+                    hostId: myUid,
+                    status: 'LOBBY',
+                    categories: ["Nome", "CEP", "Cor", "Objeto", "Animal", "Minha Sogra É"],
+                    totalRounds: 3,
+                    timeLimit: 60,
+                    currentRound: 1,
+                    currentLetter: '',
+                    stopCalledBy: '',
+                    timerEndsAt: 0,
+                    players: {
+                        [myUid]: { id: myUid, name: myName, score: 0, isHost: true, stopCalls: 0, ready: true }
+                    },
+                    roundAnswers: {},
+                    roundScores: {},
+                    votes: {},
+                    messages: [{ sender: 'Sistema', text: `Sala criada por ${myName}!`, timestamp: Date.now() }],
+                    lastReaction: null
+                };
+
                 const roomRef = getRoomDocRef(myRoomId);
                 await setDoc(roomRef, initialRoomData);
                 document.getElementById('display-room-id').textContent = myRoomId;
                 listenToRoom(myRoomId);
             } catch (err) {
-                console.error(err);
-                showToast("Falha ao criar sala.", "error");
+                console.error("Erro ao criar sala:", err);
+                const errorMsg = err?.message ? ` (${err.message})` : '';
+                showToast("Falha ao criar sala. Verifique a conexão." + errorMsg, "error");
             }
         };
 
-        // Entrar na Sala (Cliente)
         window.joinRoom = async function() {
             AudioEngine.playPop();
             myName = document.getElementById('player-name').value.trim();
@@ -716,10 +718,11 @@
             if (!myName) return showToast("Digite seu nickname!", "error");
             if (!codeInput || codeInput.length !== 5) return showToast("Código de 5 caracteres inválido!", "error");
 
-            const myUid = getPlayerUid();
-            myRoomId = codeInput;
-
             try {
+                await ensureAuth();
+                const myUid = getPlayerUid();
+                myRoomId = codeInput;
+
                 const roomRef = getRoomDocRef(myRoomId);
                 const snap = await getDoc(roomRef);
 
@@ -751,7 +754,6 @@
             }
         };
 
-        // Marcar/Desmarcar "Pronto" no Lobby
         window.toggleReadyStatus = async function() {
             AudioEngine.playPop();
             const myUid = getPlayerUid();
@@ -769,7 +771,6 @@
             }
         };
 
-        // Remover jogador (Kick pelo Host)
         window.hostKickPlayer = async function(targetUid) {
             AudioEngine.playPop();
             if (!isHost || targetUid === getPlayerUid()) return;
@@ -791,7 +792,6 @@
             }
         };
 
-        // Ouvinte do Firestore em Tempo Real
         function listenToRoom(roomId) {
             if (roomUnsubscribe) roomUnsubscribe();
 
@@ -806,20 +806,16 @@
                 const data = snapshot.data();
                 currentRoomData = data;
 
-                // Trata Emojis Flutuantes
                 if (data.lastReaction && data.lastReaction.timestamp > lastReactionTimestamp) {
                     lastReactionTimestamp = data.lastReaction.timestamp;
                     spawnFloatingEmoji(data.lastReaction.emoji, data.lastReaction.senderName);
                 }
 
-                // Trata Mensagens do Chat
                 renderChatMessages(data.messages || []);
-
                 renderGameState(data);
             });
         }
 
-        // Bate-Papo da Sala
         window.toggleChat = function() {
             AudioEngine.playPop();
             isChatOpen = !isChatOpen;
@@ -860,7 +856,6 @@
 
         function renderChatMessages(messages) {
             const container = document.getElementById('chat-messages');
-            const myUid = getPlayerUid();
 
             if (messages.length > container.children.length && !isChatOpen) {
                 unreadChatCount++;
@@ -885,7 +880,6 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // Renderiza o Estado da Sala
         function renderGameState(data) {
             const playersArr = Object.values(data.players || {});
             const myUid = getPlayerUid();
@@ -893,7 +887,6 @@
 
             document.getElementById('player-count').textContent = playersArr.length;
 
-            // Botão do status "Pronto"
             const me = data.players[myUid];
             const readyBtnText = document.getElementById('ready-btn-text');
             if (me && me.ready) {
@@ -921,7 +914,6 @@
                 </div>
             `).join('');
 
-            // Visibilidade do Host vs Cliente
             if (isHost) {
                 document.getElementById('host-controls').classList.remove('hidden');
                 document.getElementById('client-wait-msg').classList.add('hidden');
@@ -940,15 +932,16 @@
                 document.getElementById('host-final-controls').classList.add('hidden');
             }
 
-            // Gerenciador de Telas
             switch (data.status) {
                 case 'LOBBY':
                     clearInterval(timerInterval);
+                    hasSubmittedCurrentRound = false;
                     window.switchScreen('screen-setup');
                     break;
 
                 case 'DRAW':
                     clearInterval(timerInterval);
+                    hasSubmittedCurrentRound = false;
                     window.switchScreen('screen-draw');
                     document.getElementById('current-round-num').textContent = data.currentRound;
                     document.getElementById('total-rounds-num').textContent = data.totalRounds;
@@ -976,18 +969,16 @@
                     clearInterval(timerInterval);
                     const currentRound = data.currentRound;
 
-                    // Garante o envio das respostas locais do jogador caso ainda não tenham sido salvas
-                    if (!data.roundAnswers?.[currentRound]?.[myUid]) {
+                    // CORREÇÃO CRÍTICA: Envia as respostas locais imediatamente se ainda não foram enviadas
+                    if (!hasSubmittedCurrentRound) {
+                        hasSubmittedCurrentRound = true;
                         const myAns = saveLocalAnswers();
-                        if (Object.keys(myAns).length > 0) {
-                            const roomRef = getRoomDocRef(myRoomId);
-                            updateDoc(roomRef, {
-                                [`roundAnswers.${currentRound}.${myUid}`]: myAns
-                            }).catch(console.error);
-                        }
+                        const roomRef = getRoomDocRef(myRoomId);
+                        updateDoc(roomRef, {
+                            [`roundAnswers.${currentRound}.${myUid}`]: myAns
+                        }).catch(console.error);
                     }
 
-                    // Se for Host, recalcula a pontuação automática conforme as respostas chegam
                     if (isHost && data.roundAnswers?.[currentRound]) {
                         calculateAutomaticScores(data.roundAnswers[currentRound], data.categories, data.currentLetter, currentRound);
                     }
@@ -1008,7 +999,6 @@
             }
         }
 
-        // Lógica de Animação de Confetes na Vitória
         function triggerConfetti() {
             if (typeof confetti === 'function') {
                 confetti({
@@ -1019,7 +1009,6 @@
             }
         }
 
-        // Cronômetro da Rodada
         function handleRoundTimer(timerEndsAt) {
             clearInterval(timerInterval);
             const timerBox = document.getElementById('timer-seconds');
@@ -1052,7 +1041,6 @@
             }, 1000);
         }
 
-        // Enviar Emojis Flutuantes
         window.sendEmoji = async function(emoji) {
             AudioEngine.playPop();
             if (!myRoomId) return;
@@ -1087,7 +1075,6 @@
             setTimeout(() => el.remove(), 2500);
         }
 
-        // Iniciar o jogo (Host)
         window.hostStartGame = async function() {
             AudioEngine.playPop();
             const catStr = document.getElementById('categories').value;
@@ -1112,7 +1099,6 @@
             }
         };
 
-        // Sortear Letra com Animação de Roleta (Host)
         window.hostDrawLetter = async function() {
             if (isSpinningLetter) return;
             isSpinningLetter = true;
@@ -1143,7 +1129,6 @@
             }, 80);
         };
 
-        // Contagem Regressiva Dramática de Início (3... 2... 1... JÁ!)
         window.hostTriggerCountdown = function() {
             AudioEngine.playPop();
 
@@ -1173,10 +1158,24 @@
             }, 1000);
         };
 
-        // Começar Rodada Oficial (Host)
         async function hostStartRound() {
-            const timeLimitSecs = currentRoomData.timeLimit || 0;
-        // Extrai as respostas atuais digitadas nos inputs
+            if (!isHost || !myRoomId) return;
+            const timeLimitSecs = currentRoomData?.timeLimit || 0;
+            const timerEndsAt = timeLimitSecs > 0 ? Date.now() + (timeLimitSecs * 1000) : 0;
+
+            try {
+                const roomRef = getRoomDocRef(myRoomId);
+                await updateDoc(roomRef, {
+                    status: 'PLAY',
+                    timerEndsAt: timerEndsAt,
+                    stopCalledBy: ''
+                });
+            } catch (err) {
+                console.error("Erro ao iniciar rodada:", err);
+                showToast("Erro ao iniciar a rodada na sala.", "error");
+            }
+        }
+
         function saveLocalAnswers() {
             const myAnswers = {};
             if (currentRoomData?.categories) {
@@ -1190,7 +1189,6 @@
             return myAnswers;
         }
 
-        // Form com Validação em Tempo Real
         function renderCategoriesForm(categories, letter, round) {
             const formEl = document.getElementById('categories-form');
             if (formEl.children.length === categories.length && currentRenderedRound === round) return;
@@ -1241,6 +1239,7 @@
             const myUid = getPlayerUid();
             const myAnswers = saveLocalAnswers();
             const currentRound = currentRoomData.currentRound;
+            hasSubmittedCurrentRound = true; // Marca que o próprio acionador do STOP já enviou
 
             try {
                 const roomRef = getRoomDocRef(myRoomId);
@@ -1300,7 +1299,6 @@
             }
         }
 
-        // Tabela de Correção
         function renderScoreTable(data) {
             const roundNum = data.currentRound;
             const categories = data.categories || [];
@@ -1360,7 +1358,6 @@
             }).join('');
         }
 
-        // Votação dos Jogadores nas Respostas
         window.voteAnswer = async function(targetPlayerId, category, voteType) {
             AudioEngine.playPop();
             const myUid = getPlayerUid();
@@ -1376,7 +1373,6 @@
             }
         };
 
-        // Host Aplica as Correções Finais
         window.hostApplyScores = async function() {
             if (!isHost || !currentRoomData) return;
             AudioEngine.playPop();
@@ -1406,7 +1402,6 @@
             }
         };
 
-        // Avançar Rodada
         window.hostNextRound = async function() {
             if (!isHost || !currentRoomData) return;
             AudioEngine.playPop();
@@ -1437,7 +1432,6 @@
             }
         };
 
-        // Placar Final & Badges
         function renderFinalResults(data) {
             const playersArr = Object.values(data.players || {});
             const sorted = [...playersArr].sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -1491,7 +1485,6 @@
             }).join('');
         }
 
-        // Reiniciar Jogo na mesma sala
         window.hostRestartGame = async function() {
             if (!isHost || !currentRoomData) return;
             AudioEngine.playPop();
@@ -1518,7 +1511,6 @@
             }
         };
 
-        // Copiar Código da Sala
         window.copyRoomCode = function() {
             if (!myRoomId) return;
             AudioEngine.playPop();

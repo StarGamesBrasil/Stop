@@ -983,7 +983,8 @@
                         }).catch(console.error);
                     }
 
-                    if (isHost && data.roundAnswers?.[currentRound]) {
+                    // Apenas calcula pontuação inicial automática se a rodada ainda NÃO possuir pontuações gravadas
+                    if (isHost && data.roundAnswers?.[currentRound] && (!data.roundScores || !data.roundScores[currentRound])) {
                         calculateAutomaticScores(data.roundAnswers[currentRound], data.categories, data.currentLetter, currentRound);
                     }
 
@@ -1410,10 +1411,6 @@
                 await updateDoc(roomRef, {
                     [`roundScores.${roundNum}`]: updatedRoundScores
                 });
-                
-                if (document.activeElement) {
-                    document.activeElement.blur();
-                }
                 
                 showToast("Pontuações salvas e atualizadas para todos!", "success");
             } catch (err) {
